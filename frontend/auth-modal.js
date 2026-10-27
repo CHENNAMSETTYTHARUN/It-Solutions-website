@@ -1,9 +1,10 @@
 /**
  * STACKLY IT - Frontend Authentication & Contact Details Controller
- * Connects website to FastAPI backend at http://127.0.0.1:8000
+ * Connects website to FastAPI backend when on localhost, with seamless live-demo fallback on GitHub Pages
  */
 
-const API_BASE_URL = 'http://127.0.0.1:8000';
+const IS_LOCAL_HOST = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+const API_BASE_URL = IS_LOCAL_HOST ? 'http://127.0.0.1:8000' : '';
 
 const DEFAULT_COMPANY_DETAILS = {
   company_name: 'STACKLY',
@@ -235,6 +236,7 @@ function initAppModals() {
   // Open Contact Modal with Live Data
   async function openContactModal() {
     contactOverlay.classList.add('active');
+    if (!IS_LOCAL_HOST || !API_BASE_URL) return;
     try {
       const response = await fetch(`${API_BASE_URL}/api/contact`);
       if (response.ok) {
@@ -413,6 +415,14 @@ function initAppModals() {
 
       if (token && user) {
         if (confirm(`You are logged in as ${user.name} (${user.email}).\n\nDo you want to sign out?`)) {
+          if (!IS_LOCAL_HOST || !API_BASE_URL) {
+            localStorage.removeItem('stackly_token');
+            localStorage.removeItem('stackly_user');
+            refreshUserState();
+            alert('You have been signed out successfully.');
+            return;
+          }
+
           // Perform server-side logout
           fetch(`${API_BASE_URL}/api/auth/logout`, {
             method: 'POST',
@@ -449,6 +459,91 @@ function initAppModals() {
     } catch (e) {}
   }
 
+  function handleLocalSignIn(email, password) {
+    const users = getLocalUsers();
+    let user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+
+    if (!user) {
+      if (email.toLowerCase() === 'admin@stacklyit.com') {
+        user = { id: 1, name: 'Admin User', email: 'admin@stacklyit.com', role: 'admin' };
+      } else if (email.toLowerCase().includes('tharun')) {
+        user = { id: Date.now(), name: 'Tharun', email: email, role: 'user' };
+      } else {
+        const raw = email.split('@')[0];
+        const formatted = raw.charAt(0).toUpperCase() + raw.slice(1);
+        user = { id: Date.now(), name: formatted, email: email, role: 'user' };
+      }
+    }
+
+    const dummyToken = 'demo_token_' + Date.now();
+    localStorage.setItem('stackly_token', dummyToken);
+    localStorage.setItem('stackly_user', JSON.stringify({
+      id: user.id || Date.now(),
+      name: user.name,
+      email: user.email,
+      role: user.role || 'user'
+    }));
+
+    showAuthFeedback(`Welcome back, ${user.name}!`, 'success');
+    refreshUserState();
+
+    setTimeout(() => {
+      closeAuthModal();
+      formSignIn.reset();
+    }, 800);
+  }
+
+  function handleLocalSignUp(name, email, password) {
+    const users = getLocalUsers();
+    const existing = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+    if (existing) {
+      showAuthFeedback('An account with this email already exists.', 'error');
+      return;
+    }
+
+    users.push({
+      id: Date.now(),
+      name: name,
+      email: email,
+      password: password,
+      role: 'user'
+    });
+    saveLocalUsers(users);
+
+    showAuthFeedback('Account created successfully! Switching to sign in...', 'success');
+    formSignUp.reset();
+
+    setTimeout(() => {
+      switchAuthTab('signin');
+      document.getElementById('signin-email').value = email;
+      document.getElementById('signin-password').value = password;
+      document.getElementById('signin-password').focus();
+      showAuthFeedback('Account ready! Click Sign In to continue.', 'success');
+    }, 1000);
+  }
+
+  function handleLocalSubscribe(email, btn, originalBtnText, input) {
+    try {
+      const subs = JSON.parse(localStorage.getItem('stackly_subscriptions') || '[]');
+      subs.push({ email, date: new Date().toISOString() });
+      localStorage.setItem('stackly_subscriptions', JSON.stringify(subs));
+    } catch (e) {}
+
+    if (btn) {
+      btn.textContent = '✓ Subscribed!';
+      btn.style.background = '#059669';
+      btn.style.color = '#ffffff';
+      setTimeout(() => {
+        btn.textContent = originalBtnText;
+        btn.style.background = '';
+        btn.style.color = '';
+        btn.disabled = false;
+      }, 3000);
+    }
+    if (input) input.value = '';
+    alert('Thank you for subscribing to STACKLY IT updates!');
+  }
+
   // Handle Sign In Submit
   formSignIn.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -460,6 +555,14 @@ function initAppModals() {
 
     submitBtn.disabled = true;
     submitBtn.textContent = 'Signing in...';
+
+    // Direct client-side handling when hosted on GitHub Pages / live demo
+    if (!IS_LOCAL_HOST || !API_BASE_URL) {
+      handleLocalSignIn(email, password);
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Sign In';
+      return;
+    }
 
     try {
       const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
@@ -488,36 +591,7 @@ function initAppModals() {
       }, 1000);
 
     } catch (err) {
-      // Offline / GitHub Pages fallback
-      const users = getLocalUsers();
-      let user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-
-      if (!user) {
-        if (email.toLowerCase() === 'admin@stacklyit.com' && password === 'AdminSecurePassword123!') {
-          user = { id: 1, name: 'Admin User', email: 'admin@stacklyit.com', role: 'admin' };
-        } else if (email.toLowerCase().includes('tharun')) {
-          user = { id: Date.now(), name: 'Tharun', email: email, role: 'user' };
-        } else {
-          user = { id: Date.now(), name: email.split('@')[0], email: email, role: 'user' };
-        }
-      }
-
-      const dummyToken = 'demo_token_' + Date.now();
-      localStorage.setItem('stackly_token', dummyToken);
-      localStorage.setItem('stackly_user', JSON.stringify({
-        id: user.id || Date.now(),
-        name: user.name,
-        email: user.email,
-        role: user.role || 'user'
-      }));
-
-      showAuthFeedback(`Welcome back, ${user.name}!`, 'success');
-      refreshUserState();
-
-      setTimeout(() => {
-        closeAuthModal();
-        formSignIn.reset();
-      }, 800);
+      handleLocalSignIn(email, password);
     } finally {
       submitBtn.disabled = false;
       submitBtn.textContent = 'Sign In';
@@ -536,6 +610,14 @@ function initAppModals() {
 
     submitBtn.disabled = true;
     submitBtn.textContent = 'Creating account...';
+
+    // Direct client-side handling when hosted on GitHub Pages / live demo
+    if (!IS_LOCAL_HOST || !API_BASE_URL) {
+      handleLocalSignUp(name, email, password);
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Create Account';
+      return;
+    }
 
     try {
       const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
@@ -562,33 +644,7 @@ function initAppModals() {
       }, 1200);
 
     } catch (err) {
-      // Offline / GitHub Pages fallback
-      const users = getLocalUsers();
-      const existing = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-      if (existing) {
-        showAuthFeedback('An account with this email already exists.', 'error');
-        return;
-      }
-
-      users.push({
-        id: Date.now(),
-        name: name,
-        email: email,
-        password: password,
-        role: 'user'
-      });
-      saveLocalUsers(users);
-
-      showAuthFeedback('Account created successfully! Switching to sign in...', 'success');
-      formSignUp.reset();
-
-      setTimeout(() => {
-        switchAuthTab('signin');
-        document.getElementById('signin-email').value = email;
-        document.getElementById('signin-password').value = password;
-        document.getElementById('signin-password').focus();
-        showAuthFeedback('Account ready! Click Sign In to continue.', 'success');
-      }, 1000);
+      handleLocalSignUp(name, email, password);
     } finally {
       submitBtn.disabled = false;
       submitBtn.textContent = 'Create Account';
@@ -609,6 +665,11 @@ function initAppModals() {
       if (btn) {
         btn.disabled = true;
         btn.textContent = 'Subscribing...';
+      }
+
+      if (!IS_LOCAL_HOST || !API_BASE_URL) {
+        handleLocalSubscribe(email, btn, originalBtnText, input);
+        return;
       }
 
       try {
@@ -640,26 +701,7 @@ function initAppModals() {
           }
         }
       } catch (err) {
-        // Offline / GitHub Pages fallback
-        try {
-          const subs = JSON.parse(localStorage.getItem('stackly_subscriptions') || '[]');
-          subs.push({ email, date: new Date().toISOString() });
-          localStorage.setItem('stackly_subscriptions', JSON.stringify(subs));
-        } catch (e) {}
-
-        if (btn) {
-          btn.textContent = '✓ Subscribed!';
-          btn.style.background = '#059669';
-          btn.style.color = '#ffffff';
-          setTimeout(() => {
-            btn.textContent = originalBtnText;
-            btn.style.background = '';
-            btn.style.color = '';
-            btn.disabled = false;
-          }, 3000);
-        }
-        input.value = '';
-        alert('Thank you for subscribing to STACKLY IT updates!');
+        handleLocalSubscribe(email, btn, originalBtnText, input);
       }
     });
   });
