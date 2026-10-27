@@ -97,10 +97,15 @@
           }
         }
       } catch (err) {
-        // Fallback if backend offline
-        const number=`NX-${new Date().getFullYear()}-${String(Math.floor(1000+Math.random()*9000))}`;
-        sessionStorage.setItem('stacklyEnquiryNumber',number);
-        window.location.href='confirmation.html';
+        // Fallback if backend offline or running on GitHub Pages
+        const number = `NX-${new Date().getFullYear()}-${String(Math.floor(1000 + Math.random() * 9000))}`;
+        try {
+          const enquiries = JSON.parse(localStorage.getItem('stackly_local_enquiries') || '[]');
+          enquiries.push({ reference_number: number, name, email, company, phone, subject, requirements, created_at: new Date().toISOString() });
+          localStorage.setItem('stackly_local_enquiries', JSON.stringify(enquiries));
+        } catch (e) {}
+        sessionStorage.setItem('stacklyEnquiryNumber', number);
+        window.location.href = 'confirmation.html';
       }
     }
   </script>
